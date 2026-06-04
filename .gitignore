@@ -1,0 +1,26 @@
+# Binarios
+*.tar.gz
+supplycc
+supplycc_server
+supplycc_binary
+
+# Go
+vendor/
+*.test
+
+# Node
+node_modules/
+npm-debug.log
+
+# Logs
+*.log
+*.pid
+
+# Keys y certificados (seguridad)
+*.pem
+*.key
+keystore/
+
+# Archivos temporales
+*.tmp
+*.bak
