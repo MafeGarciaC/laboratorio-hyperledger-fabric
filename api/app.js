@@ -2,7 +2,6 @@
 // =============================================================================
 //  app.js — API REST Supply Chain | Laboratorio Capstone Semanas 4+5
 //  Hyperledger Fabric 2.5 + Express + fabric-gateway
-//  Jaider Reyes Herazo
 // =============================================================================
 
 const express  = require('express');
@@ -30,7 +29,7 @@ const ORG_PATH     = MSP_ID === 'Org2MSP'
   : path.join(NETWORK_DIR, 'organizations/peerOrganizations/org1.example.com');
 const USER         = MSP_ID === 'Org2MSP' ? 'User1@org2.example.com' : 'User1@org1.example.com';
 
-// ── MIDDLEWARE ────────────────────────────────────────────────────────────────
+// ── MIDDLEWARE GLOBAL ─────────────────────────────────────────────────────────
 app.use(cors());
 app.use(express.json());
 app.use(morgan('dev'));
@@ -43,7 +42,7 @@ async function conectarFabric() {
   const certDir     = path.join(ORG_PATH, `users/${USER}/msp/signcerts`);
   const keyDir      = path.join(ORG_PATH, `users/${USER}/msp/keystore`);
 
-  const tlsCert = fs.readFileSync(tlsCertPath);
+  const tlsCert   = fs.readFileSync(tlsCertPath);
   const certFiles = fs.readdirSync(certDir);
   const certPem   = fs.readFileSync(path.join(certDir, certFiles[0]));
   const keyFiles  = fs.readdirSync(keyDir);
@@ -58,13 +57,11 @@ async function conectarFabric() {
   const gateway = connect({
     client,
     identity: { mspId: MSP_ID, credentials: certPem },
-    signer: signers.newPrivateKeySigner(
-      crypto.createPrivateKey(keyPem)
-    ),
-    evaluateOptions: () => ({ deadline: Date.now() + 5000 }),
-    endorseOptions:  () => ({ deadline: Date.now() + 15000 }),
-    submitOptions:   () => ({ deadline: Date.now() + 5000 }),
-    commitStatusOptions: () => ({ deadline: Date.now() + 60000 }),
+    signer: signers.newPrivateKeySigner(crypto.createPrivateKey(keyPem)),
+    evaluateOptions:    () => ({ deadline: Date.now() + 5000 }),
+    endorseOptions:     () => ({ deadline: Date.now() + 15000 }),
+    submitOptions:      () => ({ deadline: Date.now() + 5000 }),
+    commitStatusOptions:() => ({ deadline: Date.now() + 60000 }),
   });
 
   const network = await gateway.getNetwork(CHANNEL);
@@ -80,10 +77,41 @@ const decode = (result) => JSON.parse(Buffer.from(result).toString());
 const wrap   = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
 // =============================================================================
+//  MIDDLEWARE DE AUTENTICACIÓN X-Org-Id  (Actividad Semana 5)
+//  Header X-Org-Id: org1  → Operaciones de Proveedor (Org1)
+//  Header X-Org-Id: org2  → Operaciones de Distribuidor (Org2)
+//  Sin header / valor inválido en rutas protegidas → 403 Forbidden
+// =============================================================================
+
+// Operaciones exclusivas de org1 (Proveedor): registrar, actualizar, transferir
+const soloOrg1 = (req, res, next) => {
+  const orgId = req.headers['x-org-id'];
+  if (orgId !== 'org1') {
+    return res.status(403).json({
+      error: 'Acceso denegado. Esta operación requiere X-Org-Id: org1 (Proveedor)',
+      recibido: orgId || '(sin header)'
+    });
+  }
+  next();
+};
+
+// Operaciones exclusivas de org2 (Distribuidor): confirmar recepción, entregar
+const soloOrg2 = (req, res, next) => {
+  const orgId = req.headers['x-org-id'];
+  if (orgId !== 'org2') {
+    return res.status(403).json({
+      error: 'Acceso denegado. Esta operación requiere X-Org-Id: org2 (Distribuidor)',
+      recibido: orgId || '(sin header)'
+    });
+  }
+  next();
+};
+
+// =============================================================================
 //  RUTAS API REST
 // =============================================================================
 
-// GET /health
+// GET /health — sin autenticación (monitoreo)
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -94,33 +122,33 @@ app.get('/health', (req, res) => {
   });
 });
 
-// GET /productos — todos los productos
+// GET /productos — sin autenticación (lectura pública)
 app.get('/productos', wrap(async (req, res) => {
   const result = await contract.evaluateTransaction('ConsultarTodos');
   res.json(decode(result) || []);
 }));
 
-// GET /productos/estado/:estado — filtrar por estado
+// GET /productos/estado/:estado — sin autenticación
 app.get('/productos/estado/:estado', wrap(async (req, res) => {
   const { estado } = req.params;
   const result = await contract.evaluateTransaction('ConsultarPorEstado', estado.toUpperCase());
   res.json(decode(result) || []);
 }));
 
-// GET /productos/:id — producto por ID
+// GET /productos/:id — sin autenticación
 app.get('/productos/:id', wrap(async (req, res) => {
   const result = await contract.evaluateTransaction('LeerProducto', req.params.id);
   res.json(decode(result));
 }));
 
-// GET /productos/:id/historial — historial del ledger
+// GET /productos/:id/historial — sin autenticación
 app.get('/productos/:id/historial', wrap(async (req, res) => {
   const result = await contract.evaluateTransaction('ObtenerHistorial', req.params.id);
   res.json(decode(result) || []);
 }));
 
-// POST /productos — registrar nuevo producto
-app.post('/productos', wrap(async (req, res) => {
+// POST /productos — solo org1 (Proveedor registra)
+app.post('/productos', soloOrg1, wrap(async (req, res) => {
   const { id, nombre, cantidad, unidad, origen, destino, temperatura } = req.body;
   if (!id || !nombre || !cantidad || !unidad || !origen || !destino) {
     return res.status(400).json({
@@ -134,8 +162,8 @@ app.post('/productos', wrap(async (req, res) => {
   res.status(201).json({ message: `Producto ${id} registrado en el ledger`, timestamp: new Date().toISOString() });
 }));
 
-// PUT /productos/:id/transferir — transferir a otra org
-app.put('/productos/:id/transferir', wrap(async (req, res) => {
+// PUT /productos/:id/transferir — solo org1 (Proveedor transfiere)
+app.put('/productos/:id/transferir', soloOrg1, wrap(async (req, res) => {
   const { nuevoPropietario, detalle } = req.body;
   if (!nuevoPropietario || !detalle) {
     return res.status(400).json({ error: 'Campos requeridos: nuevoPropietario, detalle' });
@@ -144,20 +172,21 @@ app.put('/productos/:id/transferir', wrap(async (req, res) => {
   res.json({ message: `Producto ${req.params.id} transferido a ${nuevoPropietario}` });
 }));
 
-// PUT /productos/:id/confirmar — confirmar recepción
-app.put('/productos/:id/confirmar', wrap(async (req, res) => {
-  const { temperatura, detalle } = req.body;
+// PUT /productos/:id/confirmar — solo org2 (Distribuidor confirma)
+app.put('/productos/:id/confirmar', soloOrg2, wrap(async (req, res) => {
+  const { temperaturaRecibido, temperatura, detalle } = req.body;
+  const temp = temperaturaRecibido || temperatura || 'N/A';
   await contract.submitTransaction(
     'ConfirmarRecepcion',
     req.params.id,
-    temperatura || 'N/A',
+    temp,
     detalle || 'Recepción confirmada'
   );
   res.json({ message: `Recepción del producto ${req.params.id} confirmada` });
 }));
 
-// PUT /productos/:id/cantidad — actualizar cantidad
-app.put('/productos/:id/cantidad', wrap(async (req, res) => {
+// PUT /productos/:id/cantidad — solo org1 (propietario actualiza)
+app.put('/productos/:id/cantidad', soloOrg1, wrap(async (req, res) => {
   const { cantidad, motivo } = req.body;
   if (!cantidad || !motivo) {
     return res.status(400).json({ error: 'Campos requeridos: cantidad, motivo' });
@@ -166,8 +195,8 @@ app.put('/productos/:id/cantidad', wrap(async (req, res) => {
   res.json({ message: `Cantidad del producto ${req.params.id} actualizada a ${cantidad}` });
 }));
 
-// PUT /productos/:id/entregar — marcar como entregado
-app.put('/productos/:id/entregar', wrap(async (req, res) => {
+// PUT /productos/:id/entregar — solo org2 (Distribuidor entrega)
+app.put('/productos/:id/entregar', soloOrg2, wrap(async (req, res) => {
   const { clienteFinal, evidencia } = req.body;
   if (!clienteFinal || !evidencia) {
     return res.status(400).json({ error: 'Campos requeridos: clienteFinal, evidencia' });
@@ -179,7 +208,7 @@ app.put('/productos/:id/entregar', wrap(async (req, res) => {
 // ── MANEJO DE ERRORES ─────────────────────────────────────────────────────────
 app.use((err, req, res, next) => {
   console.error('❌', err.message);
-  const msg = err.message || 'Error interno';
+  const msg    = err.message || 'Error interno';
   const status = msg.includes('no encontrado') ? 404 : 500;
   res.status(status).json({ error: msg });
 });
@@ -194,17 +223,17 @@ async function main() {
     await conectarFabric();
     app.listen(PORT, () => {
       console.log(`🚀 API Supply Chain en http://localhost:${PORT}`);
-      console.log('\n📋 Endpoints disponibles:');
+      console.log('\n📋 Endpoints (GET sin auth | POST/PUT requieren X-Org-Id):');
       console.log('   GET    /health');
       console.log('   GET    /productos');
       console.log('   GET    /productos/:id');
       console.log('   GET    /productos/:id/historial');
       console.log('   GET    /productos/estado/:estado');
-      console.log('   POST   /productos');
-      console.log('   PUT    /productos/:id/transferir');
-      console.log('   PUT    /productos/:id/confirmar');
-      console.log('   PUT    /productos/:id/cantidad');
-      console.log('   PUT    /productos/:id/entregar\n');
+      console.log('   POST   /productos              [X-Org-Id: org1]');
+      console.log('   PUT    /productos/:id/transferir [X-Org-Id: org1]');
+      console.log('   PUT    /productos/:id/cantidad  [X-Org-Id: org1]');
+      console.log('   PUT    /productos/:id/confirmar [X-Org-Id: org2]');
+      console.log('   PUT    /productos/:id/entregar  [X-Org-Id: org2]\n');
     });
   } catch (err) {
     console.error('❌ Error conectando a Fabric:', err);

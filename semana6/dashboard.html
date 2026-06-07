@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Supply Chain — Hyperledger Fabric Dashboard</title>
+<style>
+  :root {
+    --primary: #1a3a5c;
+    --accent:  #2563eb;
+    --green:   #16a34a;
+    --yellow:  #ca8a04;
+    --blue:    #0284c7;
+    --gray:    #6b7280;
+    --red:     #dc2626;
+    --bg:      #f0f4f8;
+    --card:    #ffffff;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: #1e293b; }
+
+  /* ── Header ──────────────────────────────────────────────── */
+  header {
+    background: var(--primary);
+    color: #fff;
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  header h1 { font-size: 1.25rem; font-weight: 700; }
+  header small { font-size: .75rem; opacity: .7; display: block; margin-top: 2px; }
+  #conn-status {
+    font-size: .8rem;
+    padding: 4px 12px;
+    border-radius: 20px;
+    background: #dc2626;
+    transition: background .3s;
+  }
+  #conn-status.ok { background: #16a34a; }
+
+  /* ── Stats ───────────────────────────────────────────────── */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    padding: 16px 24px;
+  }
+  .stat-card {
+    background: var(--card);
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+    box-shadow: 0 1px 4px rgba(0,0,0,.08);
+  }
+  .stat-card .num { font-size: 2.2rem; font-weight: 800; color: var(--accent); }
+  .stat-card .lbl { font-size: .8rem; color: var(--gray); margin-top: 4px; }
+
+  /* ── Main grid ───────────────────────────────────────────── */
+  .main-grid {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    gap: 16px;
+    padding: 0 24px 24px;
+  }
+
+  /* ── Table card ──────────────────────────────────────────── */
+  .card {
+    background: var(--card);
+    border-radius: 10px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.08);
+    overflow: hidden;
+  }
+  .card-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid #e2e8f0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-weight: 600;
+    font-size: .9rem;
+  }
+  .btn {
+    padding: 6px 14px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    font-size: .8rem;
+    font-weight: 600;
+  }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: #1d4ed8; }
+  .btn-sm { padding: 3px 8px; font-size: .72rem; }
+  .btn-green { background: #dcfce7; color: #16a34a; }
+  .btn-blue  { background: #dbeafe; color: #1d4ed8; }
+  .btn-gray  { background: #f1f5f9; color: #475569; }
+
+  table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+  th { background: #f8fafc; padding: 8px 12px; text-align: left; color: var(--gray); font-weight: 600; font-size: .75rem; text-transform: uppercase; }
+  td { padding: 8px 12px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+  tr:hover td { background: #f8fafc; }
+
+  /* ── Badges ──────────────────────────────────────────────── */
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: .7rem;
+    font-weight: 700;
+  }
+  .badge-REGISTRADO  { background: #dcfce7; color: #16a34a; }
+  .badge-EN_TRANSITO { background: #dbeafe; color: #1d4ed8; }
+  .badge-RECIBIDO    { background: #fef9c3; color: #854d0e; }
+  .badge-ENTREGADO   { background: #f3f4f6; color: #374151; }
+
+  /* ── Right panel ─────────────────────────────────────────── */
+  .right-panel { display: flex; flex-direction: column; gap: 16px; }
+
+  /* ── Historial panel ─────────────────────────────────────── */
+  .hist-list { padding: 8px 12px; max-height: 220px; overflow-y: auto; }
+  .hist-item {
+    border-left: 3px solid var(--accent);
+    padding: 6px 10px;
+    margin-bottom: 6px;
+    background: #f8fafc;
+    border-radius: 0 6px 6px 0;
+    font-size: .78rem;
+  }
+  .hist-item .txid { font-family: monospace; color: var(--accent); font-size: .68rem; word-break: break-all; }
+  .hist-item .ts   { color: var(--gray); font-size: .68rem; }
+  .hist-item .actor { font-weight: 600; font-size: .72rem; }
+
+  /* ── Log consola ─────────────────────────────────────────── */
+  #log {
+    padding: 8px 12px;
+    max-height: 180px;
+    overflow-y: auto;
+    font-family: monospace;
+    font-size: .72rem;
+    background: #0f172a;
+    color: #e2e8f0;
+    border-radius: 0 0 10px 10px;
+  }
+  .log-ok    { color: #4ade80; }
+  .log-err   { color: #f87171; }
+  .log-info  { color: #93c5fd; }
+
+  /* ── Canvas chart ────────────────────────────────────────── */
+  #chart-wrap { padding: 12px 16px; }
+  canvas { display: block; width: 100%; }
+
+  /* ── Modal ───────────────────────────────────────────────── */
+  .modal-overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.45);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: #fff;
+    border-radius: 12px;
+    padding: 24px;
+    width: 380px;
+    max-width: 95vw;
+  }
+  .modal h3 { margin-bottom: 16px; font-size: 1rem; }
+  .modal label { display: block; font-size: .8rem; font-weight: 600; margin-bottom: 4px; color: #374151; }
+  .modal input {
+    width: 100%;
+    padding: 7px 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font-size: .85rem;
+    margin-bottom: 10px;
+  }
+  .modal-footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+  .btn-cancel { background: #f1f5f9; color: #374151; }
+
+  /* ── Toolbar ─────────────────────────────────────────────── */
+  .toolbar {
+    padding: 8px 16px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  #search-input {
+    padding: 5px 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font-size: .82rem;
+    width: 160px;
+  }
+  #refresh-timer { font-size: .75rem; color: var(--gray); margin-left: auto; }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <div>
+    <h1>⛓ Supply Chain — Hyperledger Fabric 2.5</h1>
+    <small>Canal: supplychannel &nbsp;|&nbsp; Chaincode: supplycc &nbsp;|&nbsp; Org1MSP (Proveedor) + Org2MSP (Distribuidor)</small>
+  </div>
+  <span id="conn-status">Conectando…</span>
+</header>
+
+<!-- STATS -->
+<div class="stats">
+  <div class="stat-card"><div class="num" id="s-total">—</div><div class="lbl">Total Productos</div></div>
+  <div class="stat-card"><div class="num" id="s-reg" style="color:#16a34a">—</div><div class="lbl">REGISTRADOS</div></div>
+  <div class="stat-card"><div class="num" id="s-tr" style="color:#1d4ed8">—</div><div class="lbl">EN TRÁNSITO</div></div>
+  <div class="stat-card"><div class="num" id="s-rec" style="color:#854d0e">—</div><div class="lbl">RECIBIDOS</div></div>
+</div>
+
+<!-- MAIN GRID -->
+<div class="main-grid">
+
+  <!-- LEFT: tabla + chart -->
+  <div style="display:flex;flex-direction:column;gap:16px;">
+
+    <!-- Tabla productos -->
+    <div class="card">
+      <div class="card-header">
+        World State — Productos
+        <div style="display:flex;gap:6px;align-items:center;">
+          <button class="btn btn-primary btn-sm" onclick="openModal('reg')">+ Registrar</button>
+          <button class="btn btn-blue btn-sm" onclick="openModal('trans')">⇄ Transferir</button>
+          <button class="btn btn-green btn-sm" onclick="openModal('confirm')">✓ Confirmar</button>
+          <button class="btn btn-gray btn-sm" onclick="loadProductos()">↺ Refresh</button>
+        </div>
+      </div>
+      <div class="toolbar">
+        <input id="search-input" type="text" placeholder="Buscar por ID o nombre…" oninput="filterTable()">
+        <select id="filter-estado" onchange="filterTable()" style="padding:5px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:.82rem;">
+          <option value="">— Todos los estados —</option>
+          <option>REGISTRADO</option>
+          <option>EN_TRANSITO</option>
+          <option>RECIBIDO</option>
+          <option>ENTREGADO</option>
+        </select>
+        <span id="refresh-timer">Próximo refresh: 15s</span>
+      </div>
+      <div style="overflow-x:auto;">
+        <table>
+          <thead><tr>
+            <th>ID</th><th>Nombre</th><th>Cantidad</th><th>Propietario</th>
+            <th>Estado</th><th>Origen</th><th>Destino</th><th>Acciones</th>
+          </tr></thead>
+          <tbody id="tabla-body">
+            <tr><td colspan="8" style="text-align:center;padding:24px;color:#94a3b8">Cargando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Gráfico de barras (canvas) -->
+    <div class="card">
+      <div class="card-header">Distribución por Estado</div>
+      <div id="chart-wrap">
+        <canvas id="chart" height="90"></canvas>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- RIGHT: historial + log -->
+  <div class="right-panel">
+
+    <!-- Historial -->
+    <div class="card">
+      <div class="card-header">
+        Historial del Ledger
+      </div>
+      <div style="padding:8px 12px 4px;">
+        <input id="hist-id" type="text" placeholder="ID del producto (ej: PROD-030)"
+          style="width:100%;padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:.82rem;">
+        <button class="btn btn-primary" style="width:100%;margin-top:6px;" onclick="loadHistorial()">Ver historial</button>
+      </div>
+      <div class="hist-list" id="hist-list">
+        <p style="color:#94a3b8;font-size:.8rem;padding:8px 0;">Ingresa un ID y haz clic en "Ver historial".</p>
+      </div>
+    </div>
+
+    <!-- Log de transacciones -->
+    <div class="card" style="flex:1;">
+      <div class="card-header" style="background:#0f172a;color:#e2e8f0;border-bottom:1px solid #1e293b;">
+        Log de Transacciones
+        <button class="btn btn-sm" style="background:#1e293b;color:#94a3b8;" onclick="document.getElementById('log').innerHTML=''">Limpiar</button>
+      </div>
+      <div id="log"></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── MODALES ────────────────────────────────────────────────────────── -->
+
+<!-- Registrar -->
+<div class="modal-overlay" id="modal-reg">
+  <div class="modal">
+    <h3>+ Registrar Producto</h3>
+    <label>ID</label><input id="r-id" placeholder="ej: PROD-050">
+    <label>Nombre</label><input id="r-nombre" placeholder="ej: Yuca Amarga">
+    <label>Cantidad</label><input id="r-cantidad" type="number" placeholder="500">
+    <label>Unidad</label><input id="r-unidad" placeholder="kg">
+    <label>Origen</label><input id="r-origen" placeholder="ej: Córdoba, Colombia">
+    <label>Destino</label><input id="r-destino" placeholder="ej: Barranquilla">
+    <label>Temperatura</label><input id="r-temp" placeholder="ej: 22C">
+    <div class="modal-footer">
+      <button class="btn btn-cancel" onclick="closeModal('reg')">Cancelar</button>
+      <button class="btn btn-primary" onclick="doRegistrar()">Registrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Transferir -->
+<div class="modal-overlay" id="modal-trans">
+  <div class="modal">
+    <h3>⇄ Transferir Producto</h3>
+    <label>ID del Producto</label><input id="t-id" placeholder="ej: PROD-040">
+    <label>Nuevo Propietario</label><input id="t-prop" placeholder="Org2MSP">
+    <label>Detalle</label><input id="t-detalle" placeholder="ej: Envío terrestre">
+    <div class="modal-footer">
+      <button class="btn btn-cancel" onclick="closeModal('trans')">Cancelar</button>
+      <button class="btn btn-primary" onclick="doTransferir()">Transferir</button>
+    </div>
+  </div>
+</div>
+
+<!-- Confirmar recepción -->
+<div class="modal-overlay" id="modal-confirm">
+  <div class="modal">
+    <h3>✓ Confirmar Recepción</h3>
+    <label>ID del Producto</label><input id="c-id" placeholder="ej: PROD-040">
+    <label>Temperatura recibida</label><input id="c-temp" placeholder="ej: 18C">
+    <label>Detalle</label><input id="c-detalle" placeholder="ej: Lote en perfecto estado">
+    <div class="modal-footer">
+      <button class="btn btn-cancel" onclick="closeModal('confirm')">Cancelar</button>
+      <button class="btn btn-primary" onclick="doConfirmar()">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = 'http://localhost:3000';
+let allProductos = [];
+let countdown = 15;
+let timerInterval;
+
+// ── Utilidades ─────────────────────────────────────────────────────────────
+function addLog(msg, type='info') {
+  const log = document.getElementById('log');
+  const ts = new Date().toLocaleTimeString();
+  const cls = type === 'ok' ? 'log-ok' : type === 'err' ? 'log-err' : 'log-info';
+  log.innerHTML += `<div class="${cls}">[${ts}] ${msg}</div>`;
+  log.scrollTop = log.scrollHeight;
+}
+
+function openModal(name)  { document.getElementById('modal-'+name).classList.add('open'); }
+function closeModal(name) { document.getElementById('modal-'+name).classList.remove('open'); }
+
+// ── Cargar productos ────────────────────────────────────────────────────────
+async function loadProductos() {
+  try {
+    const r = await fetch(`${API}/productos`);
+    if (!r.ok) throw new Error(r.status);
+    allProductos = await r.json();
+    renderTabla(allProductos);
+    updateStats(allProductos);
+    drawChart(allProductos);
+    document.getElementById('conn-status').textContent = '● Conectado';
+    document.getElementById('conn-status').className = 'ok';
+    addLog(`${allProductos.length} productos cargados`, 'ok');
+  } catch(e) {
+    document.getElementById('conn-status').textContent = '● Sin conexión';
+    document.getElementById('conn-status').className = '';
+    addLog(`Error cargando productos: ${e.message}`, 'err');
+    document.getElementById('tabla-body').innerHTML =
+      `<tr><td colspan="8" style="text-align:center;color:#f87171;padding:20px;">
+        Error al conectar con la API. Verifica que esté corriendo en http://localhost:3000</td></tr>`;
+  }
+  resetTimer();
+}
+
+// ── Tabla ───────────────────────────────────────────────────────────────────
+function renderTabla(datos) {
+  const tbody = document.getElementById('tabla-body');
+  if (!datos.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:20px;color:#94a3b8">Sin productos</td></tr>';
+    return;
+  }
+  tbody.innerHTML = datos.map(p => `
+    <tr>
+      <td><strong>${p.id}</strong></td>
+      <td>${p.nombre}</td>
+      <td>${p.cantidad} ${p.unidad}</td>
+      <td style="font-size:.75rem">${p.propietario}</td>
+      <td><span class="badge badge-${p.estado}">${p.estado.replace('_',' ')}</span></td>
+      <td style="font-size:.75rem">${p.origen}</td>
+      <td style="font-size:.75rem">${p.destino}</td>
+      <td>
+        <button class="btn btn-gray btn-sm" onclick="verHistorial('${p.id}')">Historial</button>
+      </td>
+    </tr>`).join('');
+}
+
+function filterTable() {
+  const q = document.getElementById('search-input').value.toLowerCase();
+  const st = document.getElementById('filter-estado').value;
+  const filtrado = allProductos.filter(p =>
+    (!q || p.id.toLowerCase().includes(q) || p.nombre.toLowerCase().includes(q)) &&
+    (!st || p.estado === st)
+  );
+  renderTabla(filtrado);
+}
+
+// ── Stats ───────────────────────────────────────────────────────────────────
+function updateStats(datos) {
+  document.getElementById('s-total').textContent = datos.length;
+  document.getElementById('s-reg').textContent  = datos.filter(p => p.estado === 'REGISTRADO').length;
+  document.getElementById('s-tr').textContent   = datos.filter(p => p.estado === 'EN_TRANSITO').length;
+  document.getElementById('s-rec').textContent  = datos.filter(p => p.estado === 'RECIBIDO').length;
+}
+
+// ── Gráfico de barras (Canvas HTML5, sin librerías) ─────────────────────────
+function drawChart(datos) {
+  const canvas = document.getElementById('chart');
+  const ctx = canvas.getContext('2d');
+  const w = canvas.offsetWidth || 500;
+  canvas.width = w;
+  canvas.height = 90;
+  ctx.clearRect(0, 0, w, 90);
+
+  const estados = ['REGISTRADO','EN_TRANSITO','RECIBIDO','ENTREGADO'];
+  const colors  = ['#16a34a',   '#1d4ed8',     '#854d0e', '#6b7280'];
+  const counts  = estados.map(e => datos.filter(p => p.estado === e).length);
+  const maxVal  = Math.max(...counts, 1);
+
+  const barW    = Math.floor(w / estados.length) - 16;
+  const padLeft = 8;
+  const chartH  = 54;
+  const baseY   = 70;
+
+  estados.forEach((est, i) => {
+    const x = padLeft + i * (barW + 16);
+    const h = (counts[i] / maxVal) * chartH;
+    ctx.fillStyle = colors[i];
+    ctx.beginPath();
+    ctx.roundRect(x, baseY - h, barW, h, [4,4,0,0]);
+    ctx.fill();
+
+    // Número sobre la barra
+    ctx.fillStyle = colors[i];
+    ctx.font = 'bold 13px Segoe UI';
+    ctx.textAlign = 'center';
+    ctx.fillText(counts[i], x + barW/2, baseY - h - 4);
+
+    // Etiqueta debajo
+    ctx.fillStyle = '#64748b';
+    ctx.font = '9px Segoe UI';
+    ctx.fillText(est.replace('_',' '), x + barW/2, baseY + 12);
+  });
+}
+
+// ── Historial ───────────────────────────────────────────────────────────────
+async function verHistorial(id) {
+  document.getElementById('hist-id').value = id;
+  await loadHistorial();
+}
+
+async function loadHistorial() {
+  const id = document.getElementById('hist-id').value.trim();
+  if (!id) return;
+  const list = document.getElementById('hist-list');
+  list.innerHTML = '<p style="color:#94a3b8;font-size:.8rem;padding:8px 0;">Cargando…</p>';
+  try {
+    const r = await fetch(`${API}/productos/${id}/historial`);
+    const data = await r.json();
+    if (!r.ok || data.error) throw new Error(data.error || r.status);
+    list.innerHTML = data.map(ev => `
+      <div class="hist-item">
+        <div><span class="badge badge-${ev.estado}">${ev.estado.replace('_',' ')}</span></div>
+        <div class="actor">${ev.actor}</div>
+        <div class="ts">${ev.timestamp}</div>
+        <div class="txid">TxID: ${ev.txId}</div>
+      </div>`).join('');
+    addLog(`Historial ${id}: ${data.length} eventos`, 'ok');
+  } catch(e) {
+    list.innerHTML = `<p style="color:#f87171;font-size:.8rem;padding:8px 0;">Error: ${e.message}</p>`;
+    addLog(`Error historial ${id}: ${e.message}`, 'err');
+  }
+}
+
+// ── Operaciones ─────────────────────────────────────────────────────────────
+async function doRegistrar() {
+  const body = {
+    id: document.getElementById('r-id').value.trim(),
+    nombre: document.getElementById('r-nombre').value.trim(),
+    cantidad: parseInt(document.getElementById('r-cantidad').value),
+    unidad: document.getElementById('r-unidad').value.trim(),
+    origen: document.getElementById('r-origen').value.trim(),
+    destino: document.getElementById('r-destino').value.trim(),
+    temperatura: document.getElementById('r-temp').value.trim()
+  };
+  addLog(`Registrando ${body.id}…`);
+  try {
+    const r = await fetch(`${API}/productos`, {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.status);
+    addLog(`${body.id} registrado en el ledger`, 'ok');
+    closeModal('reg');
+    setTimeout(loadProductos, 2000);
+  } catch(e) { addLog(`Error: ${e.message}`, 'err'); }
+}
+
+async function doTransferir() {
+  const id = document.getElementById('t-id').value.trim();
+  const body = {
+    nuevoPropietario: document.getElementById('t-prop').value.trim(),
+    detalle: document.getElementById('t-detalle').value.trim()
+  };
+  addLog(`Transfiriendo ${id} → ${body.nuevoPropietario}…`);
+  try {
+    const r = await fetch(`${API}/productos/${id}/transferir`, {
+      method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.status);
+    addLog(`${id} transferido a ${body.nuevoPropietario} (EN_TRANSITO)`, 'ok');
+    closeModal('trans');
+    setTimeout(loadProductos, 2000);
+  } catch(e) { addLog(`Error: ${e.message}`, 'err'); }
+}
+
+async function doConfirmar() {
+  const id = document.getElementById('c-id').value.trim();
+  const body = {
+    temperaturaRecibido: document.getElementById('c-temp').value.trim(),
+    detalle: document.getElementById('c-detalle').value.trim()
+  };
+  addLog(`Confirmando recepción de ${id}…`);
+  try {
+    const r = await fetch(`${API}/productos/${id}/confirmar`, {
+      method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.status);
+    addLog(`${id} confirmado como RECIBIDO`, 'ok');
+    closeModal('confirm');
+    setTimeout(loadProductos, 2000);
+  } catch(e) { addLog(`Error: ${e.message}`, 'err'); }
+}
+
+// ── Auto-refresh ─────────────────────────────────────────────────────────────
+function resetTimer() {
+  clearInterval(timerInterval);
+  countdown = 15;
+  timerInterval = setInterval(() => {
+    countdown--;
+    document.getElementById('refresh-timer').textContent = `Próximo refresh: ${countdown}s`;
+    if (countdown <= 0) loadProductos();
+  }, 1000);
+}
+
+// Cerrar modales al hacer clic fuera
+document.querySelectorAll('.modal-overlay').forEach(m => {
+  m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
+});
+
+// Redibujar chart al cambiar tamaño
+window.addEventListener('resize', () => drawChart(allProductos));
+
+// Iniciar
+loadProductos();
+</script>
+</body>
+</html>
